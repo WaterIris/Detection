@@ -13,7 +13,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 from utils import setup_logging
 
-pd.set_option("display.max_rows", 10)
+pd.set_option("display.max_rows", 20)
 pd.set_option("display.max_columns", None)
 pd.set_option("display.width", None)
 sklearn.set_config(transform_output="pandas")
@@ -27,8 +27,8 @@ class Model:
 
     def create_result_dir(self):
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        output_dir = Path(f"./results/run_{timestamp}")
-        output_dir.mkdir(parents=True, exist_ok=True)
+        self.result_dir = Path(f"./results/run_{timestamp}")
+        self.result_dir.mkdir(parents=True, exist_ok=True)
 
     def load_datasets(self, dataset_path) -> pd.DataFrame:
         search_path = os.path.join(dataset_path, "*.csv")
@@ -43,8 +43,13 @@ class Model:
         full_df = pd.concat(df_list, axis=0, ignore_index=True)
         return full_df
 
+    @staticmethod
+    def to_df(df) -> pd.DataFrame:
+        # helper method to fix lsp mistaking scikit output as ndarray
+        return pd.DataFrame(df)
+
     def prepare_data(self) -> None:
-        self.log.info("Data preparation...")
+        self.log.info("Data processing...")
         # Label Encoding
         self.encoder = LabelEncoder()
         self.encoder.fit(self.full_dataset.iloc[:, -1])
@@ -58,33 +63,62 @@ class Model:
         self.log.info("Data cleaned")
 
         # Split dataset into features and labels
-        # x - features
-        x = self.full_dataset.iloc[:, :-1]
-        # y - labels
-        y = self.full_dataset.iloc[:, -1:]
+        x = self.full_dataset.iloc[:, :-1]  # - features
+        y = self.full_dataset.iloc[:, -1:]  # - labels
 
         x_train, x_test, y_train, y_test = train_test_split(
             x, y, test_size=0.2, random_state=42, stratify=y
         )
         self.log.info("Data split")
+        df_train = pd.concat([self.to_df(x_train), self.to_df(y_train)], axis=1)
+        df_test = pd.concat([self.to_df(x_test), self.to_df(y_test)], axis=1)
+
+        # Keep dataset split as backup for retesting/training
+        df_train.to_csv(path_or_buf=self.result_dir / "train.csv")
+        df_test.to_csv(path_or_buf=self.result_dir / "test.csv")
+        del df_train  # free memory
+        del df_test  # free memory
 
         scaler = StandardScaler()
         scaler.fit(x_train)
-        joblib.dump(scaler, "scaler.pkl")
+        joblib.dump(scaler, self.result_dir / "scaler.pkl")
         x_train_scaled = scaler.transform(x_train)
         x_test_scaled = scaler.transform(x_test)
         self.log.info("Data scaled")
+        del x_train  # free memory
+        del x_test  # free memory
 
-        # # Select k features with highest variance/f score
+        # Select k features with highest variance/f score
         selector = SelectKBest(score_func=f_classif, k=5)
-        # selector = SelectKBest(score_func=mutual_info_classif, k=5) #  Unusable due to time required
         selector.fit(x_train_scaled, np.ravel(y_train))
         # For some reason lsp thinks that scikit return it as either list of ndarray altough its pandas dataframe
-        x_train_selected = pd.DataFrame(selector.transform(x_train_scaled))
-        x_test_selected = pd.DataFrame(selector.transform(x_test_scaled))
+        x_train_selected = selector.transform(x_train_scaled)
+        x_test_selected = selector.transform(x_test_scaled)
         self.log.info("Data selected")
-        self.log.info(f"Train:\n{x_train_selected.describe()}")
-        self.log.info(f"Test:\n{x_test_selected.describe()}")
+        del x_train_scaled  # free memory
+        del x_test_scaled  # free memory
+
+        self.x_train: pd.DataFrame = self.to_df(x_train_selected)
+        self.y_train: pd.DataFrame = self.to_df(y_train)
+        self.x_test: pd.DataFrame = self.to_df(x_test_selected)
+        self.y_test: pd.DataFrame = self.to_df(y_test)
+        self.log.info("Data Processed")
+
+        # Showcase data after processing
+        self.log.info(f"Training data:\n {self.x_train.describe()}")
+        decoded_train = pd.Series(
+            self.encoder.inverse_transform(np.ravel(self.y_train))
+        )
+        self.log.info(f"\n{decoded_train.value_counts(normalize=True) * 100}")
+
+        self.log.info(f"Test data:\n {self.x_test.describe()}")
+        decoded_test = pd.Series(self.encoder.inverse_transform(np.ravel(self.y_test)))
+        self.log.info(f"\n{decoded_test.value_counts(normalize=True) * 100}")
+
+        def get_train_test(
+            self,
+        ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+            return self.x_train, self.y_train, self.x_test, self.y_test
 
 
 if __name__ == "__main__":
