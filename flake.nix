@@ -28,7 +28,7 @@
 	# python313Packages.python-lsp-server
         python313Packages.pip
 	# python313Packages.pylsp-mypy
-        # python313Packages.pyqt6
+        python313Packages.pyqt6
       ];
     };
   };
