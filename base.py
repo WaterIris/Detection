@@ -3,7 +3,6 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from pprint import pformat
 
 import joblib
 import numpy as np
@@ -157,7 +156,17 @@ class Model:
             output_dict=True,
         )
 
-        self.log.info(f"Model Report:\n{pformat(report)}")
+        self.log.info(
+            f"Model Report: {
+                classification_report(
+                    y_test,
+                    y_res,
+                    target_names=target_names,
+                    zero_division=0.0,
+                )
+            }"
+        )
+
         with open(self.result_dir / "report_rfc.json", "w") as f:
             json.dump(report, f, indent=4)
 
@@ -167,7 +176,7 @@ class Model:
             "features": self.selector.get_support(),
             "label_encoder": self.encoder,
         }
-        joblib.dump(model_artifacts, self.result_dir / "rfc_model.joblib")
+        joblib.dump(model_artifacts, self.result_dir / "rfc_model_artifacts.joblib")
         self.log.info("Model artifacts saved")
 
     def train_model_2(self):
@@ -188,7 +197,7 @@ class Model:
 
         criterion = nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=0.005)
-        epochs = 30
+        epochs = 10
         model.train()
 
         for epoch in range(epochs):
@@ -218,17 +227,36 @@ class Model:
                 y_test,
                 y_pred_list,
                 target_names=target_names,
-                zero_division=0,
+                zero_division=0.0,
                 output_dict=True,
             )
+            self.log.info(
+                f"Model Report: {
+                    classification_report(
+                        y_test,
+                        y_pred_list,
+                        target_names=target_names,
+                        zero_division=0.0,
+                    )
+                }"
+            )
 
-            self.log.info(f"Model Report:\n{pformat(report)}")
             with open(self.result_dir / "report_nn.json", "w") as f:
                 json.dump(report, f, indent=4)
+
+            torch.save(model, self.result_dir / "model_nn.pth")
+
+            model_artifacts = {
+                "scaler": self.scaler,
+                "features": self.selector.get_support(),
+                "label_encoder": self.encoder,
+            }
+
+            joblib.dump(model_artifacts, self.result_dir / "artifacts_nn.joblib")
 
 
 if __name__ == "__main__":
     model = Model(datasets_path="./datasets")
     model.prepare_data()
-    # model.train_model_1()
+    model.train_model_1()
     model.train_model_2()
