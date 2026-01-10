@@ -108,7 +108,7 @@ def objective(trial):
 
     weights = {i: minority_weight for i in range(15)}
     weights[0] = 1.0
-
+    print(weights)
     rf = RandomForestClassifier(
         n_estimators=trial.suggest_int("n_estimators", 50, 200),
         max_depth=trial.suggest_int("max_depth", 10, 50),
@@ -124,7 +124,7 @@ def objective(trial):
 
 
 study = optuna.create_study(
-    study_name="optimization_rfc",
+    study_name="optimization_rfc_test",
     storage="sqlite:///db.sqlite3",
     direction="maximize",
     load_if_exists=True,
